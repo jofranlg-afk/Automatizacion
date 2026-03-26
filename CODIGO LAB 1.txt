@@ -1,0 +1,71 @@
+#include <HX711_ADC.h>
+#if defined(ESP8266)|| defined(ESP32) || defined(AVR)
+#include <EEPROM.h>
+#endif
+
+const int HX711_dout = 4;
+const int HX711_sck = 5;
+
+HX711_ADC LoadCell(HX711_dout, HX711_sck);
+
+const int calVal_eepromAdress = 0;
+unsigned long t = 0;
+
+float calibrationValue = 696.0;
+
+void setup() {
+  Serial.begin(57600); delay(10);
+  Serial.println("Starting...");
+
+  LoadCell.begin();
+
+  EEPROM.get(calVal_eepromAdress, calibrationValue);
+
+  unsigned long stabilizingtime = 2000;
+  boolean _tare = true;
+
+  LoadCell.start(stabilizingtime, _tare);
+
+  if (LoadCell.getTareTimeoutFlag()) {
+    Serial.println("Timeout, check wiring");
+    while (1);
+  }
+  else {
+    LoadCell.setCalFactor(calibrationValue);
+    Serial.println("Startup complete");
+  }
+}
+
+void loop() {
+
+  static boolean newDataReady = 0;
+
+  if (LoadCell.update()) newDataReady = true;
+
+  if (newDataReady) {
+
+    // Masa calibrada
+    float masa = LoadCell.getData();
+
+    // Valor bruto ADC
+    long raw = LoadCell.getDataSetStatus();  // No sirve como raw, usamos alternativa
+
+    long rawValue = LoadCell.getTareOffset(); // offset
+    rawValue = LoadCell.getData() * calibrationValue; // aproximación al valor digital
+
+    // ---- Cálculo de voltaje diferencial ----
+    float Vref = 4.3;       // Voltaje referencia típico
+    int gain = 128;         // Ganancia por defecto HX711
+    float Vin = (rawValue / 8388608.0) * (Vref / gain);
+
+    Serial.print("Masa: ");
+    Serial.print(masa);
+    Serial.print(" g");
+
+    Serial.print(" | Voltaje diferencial: ");
+    Serial.print(Vin * 1000.0);  // en mV
+    Serial.println(" mV");
+
+    newDataReady = 0;
+  }
+}
